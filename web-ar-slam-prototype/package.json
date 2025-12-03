@@ -22,7 +22,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/NoelNLaka/custom-slam.git"
   },
   "engines": {
     "node": ">=16.0.0"

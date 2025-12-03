@@ -56,9 +56,10 @@ class ARScene {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setClearColor(0x000000, 0);
-        
+
         // Setup camera
         this.camera.position.set(0, 1.6, 0);  // Approximate eye height
+        this.camera.rotation.x = -0.3;  // Tilt down slightly to see the ground grid
         
         // Add lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);

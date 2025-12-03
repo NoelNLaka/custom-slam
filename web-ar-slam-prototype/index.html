@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Web AR SLAM Prototype</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- OpenCV.js -->
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+    
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-panel: rgba(15, 15, 25, 0.85);
+            --accent-cyan: #00f5d4;
+            --accent-magenta: #f72585;
+            --accent-yellow: #fee440;
+            --accent-blue: #4361ee;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --glow-cyan: 0 0 20px rgba(0, 245, 212, 0.5);
+            --glow-magenta: 0 0 20px rgba(247, 37, 133, 0.5);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Main Container */
+        #app {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        /* Camera/AR View */
+        #ar-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        #camera-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        
+        #ar-canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+        
+        #feature-canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 3;
+            pointer-events: none;
+        }
+        
+        /* Header */
+        #header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 16px 20px;
+            background: linear-gradient(to bottom, rgba(10, 10, 15, 0.9), transparent);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        
+        .logo-text {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+        
+        .logo-text span {
+            color: var(--accent-cyan);
+        }
+        
+        /* Status Indicators */
+        #status-bar {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+        }
+        
+        .status-dot.active {
+            background: var(--accent-cyan);
+            box-shadow: var(--glow-cyan);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.warning {
+            background: var(--accent-yellow);
+        }
+        
+        .status-dot.error {
+            background: var(--accent-magenta);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Control Panel */
+        #control-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        /* Telemetry Display */
+        #telemetry {
+            background: var(--bg-panel);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        
+        .telemetry-item {
+            text-align: center;
+        }
+        
+        .telemetry-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+        
+        .telemetry-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+        }
+        
+        /* Button Row */
+        #button-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        
+        .ar-button {
+            flex: 1;
+            max-width: 160px;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 12px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .ar-button.primary {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: var(--bg-dark);
+        }
+        
+        .ar-button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--glow-cyan);
+        }
+        
+        .ar-button.secondary {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+        
+        .ar-button.secondary:hover {
+            border-color: var(--accent-cyan);
+        }
+        
+        .ar-button.danger {
+            background: linear-gradient(135deg, var(--accent-magenta), #b5179e);
+            color: white;
+        }
+        
+        .ar-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        /* Side Panel - Debug Info */
+        #debug-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 280px;
+            z-index: 100;
+            background: var(--bg-panel);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+        
+        #debug-panel.collapsed {
+            transform: translateX(calc(100% + 20px));
+        }
+        
+        .panel-header {
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .panel-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+        
+        .panel-content {
+            padding: 16px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .debug-section {
+            margin-bottom: 16px;
+        }
+        
+        .debug-section:last-child {
+            margin-bottom: 0;
+        }
+        
+        .debug-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .debug-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+            font-size: 12px;
+        }
+        
+        .debug-key {
+            color: var(--text-secondary);
+        }
+        
+        .debug-value {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        
+        /* Toggle Button */
+        #toggle-debug {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            z-index: 99;
+            width: 40px;
+            height: 40px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        
+        #toggle-debug:hover {
+            border-color: var(--accent-cyan);
+        }
+        
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 50;
+            pointer-events: none;
+        }
+        
+        .crosshair-ring {
+            width: 60px;
+            height: 60px;
+            border: 2px solid var(--accent-cyan);
+            border-radius: 50%;
+            opacity: 0.5;
+        }
+        
+        .crosshair-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            box-shadow: var(--glow-cyan);
+        }
+        
+        /* Loading Overlay */
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            background: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            transition: opacity 0.5s ease;
+        }
+        
+        #loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .loading-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--accent-cyan);
+        }
+        
+        /* Permission Request */
+        #permission-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2000;
+            background: rgba(10, 10, 15, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        #permission-modal.hidden {
+            display: none;
+        }
+        
+        .permission-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 32px;
+            max-width: 400px;
+            text-align: center;
+        }
+        
+        .permission-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 36px;
+        }
+        
+        .permission-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        
+        .permission-desc {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        
+        .permission-list {
+            text-align: left;
+            margin-bottom: 24px;
+        }
+        
+        .permission-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        
+        .permission-item-icon {
+            width: 32px;
+            height: 32px;
+            background: rgba(0, 245, 212, 0.1);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-cyan);
+        }
+        
+        /* Feature Visualization */
+        .feature-point {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: var(--accent-magenta);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 4px var(--accent-magenta);
+        }
+        
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            #telemetry {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            #debug-panel {
+                width: calc(100% - 40px);
+                max-height: 50vh;
+            }
+            
+            .status-pill span {
+                display: none;
+            }
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- AR View Container -->
+        <div id="ar-container">
+            <video id="camera-feed" autoplay playsinline muted></video>
+            <canvas id="ar-canvas"></canvas>
+            <canvas id="feature-canvas"></canvas>
+        </div>
+        
+        <!-- Crosshair -->
+        <div id="crosshair">
+            <div class="crosshair-ring"></div>
+            <div class="crosshair-dot"></div>
+        </div>
+        
+        <!-- Header -->
+        <header id="header">
+            <div class="logo">
+                <div class="logo-icon">AR</div>
+                <div class="logo-text">Web<span>SLAM</span></div>
+            </div>
+            <div id="status-bar">
+                <div class="status-pill">
+                    <div class="status-dot" id="status-camera"></div>
+                    <span>Camera</span>
+                </div>
+                <div class="status-pill">
+                    <div class="status-dot" id="status-gps"></div>
+                    <span>GPS</span>
+                </div>
+                <div class="status-pill">
+                    <div class="status-dot" id="status-imu"></div>
+                    <span>IMU</span>
+                </div>
+                <div class="status-pill">
+                    <div class="status-dot" id="status-slam"></div>
+                    <span>SLAM</span>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Toggle Debug Button -->
+        <button id="toggle-debug" onclick="toggleDebugPanel()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+        </button>
+        
+        <!-- Debug Panel -->
+        <div id="debug-panel" class="collapsed">
+            <div class="panel-header">
+                <span class="panel-title">Debug Info</span>
+                <button onclick="toggleDebugPanel()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;">✕</button>
+            </div>
+            <div class="panel-content">
+                <div class="debug-section">
+                    <div class="debug-section-title">
+                        <span>📍</span> GPS Position
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Latitude</span>
+                        <span class="debug-value" id="debug-lat">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Longitude</span>
+                        <span class="debug-value" id="debug-lon">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Accuracy</span>
+                        <span class="debug-value" id="debug-accuracy">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">ENU (m)</span>
+                        <span class="debug-value" id="debug-enu">--</span>
+                    </div>
+                </div>
+                
+                <div class="debug-section">
+                    <div class="debug-section-title">
+                        <span>🧭</span> Orientation
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Alpha (Z)</span>
+                        <span class="debug-value" id="debug-alpha">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Beta (X)</span>
+                        <span class="debug-value" id="debug-beta">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Gamma (Y)</span>
+                        <span class="debug-value" id="debug-gamma">--</span>
+                    </div>
+                </div>
+                
+                <div class="debug-section">
+                    <div class="debug-section-title">
+                        <span>📷</span> Visual SLAM
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Features</span>
+                        <span class="debug-value" id="debug-features">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Keyframes</span>
+                        <span class="debug-value" id="debug-keyframes">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Map Points</span>
+                        <span class="debug-value" id="debug-mappoints">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Track Status</span>
+                        <span class="debug-value" id="debug-trackstatus">--</span>
+                    </div>
+                </div>
+                
+                <div class="debug-section">
+                    <div class="debug-section-title">
+                        <span>⚡</span> Performance
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">Frame Time</span>
+                        <span class="debug-value" id="debug-frametime">--</span>
+                    </div>
+                    <div class="debug-row">
+                        <span class="debug-key">FPS</span>
+                        <span class="debug-value" id="debug-fps">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Control Panel -->
+        <div id="control-panel">
+            <div id="telemetry">
+                <div class="telemetry-item">
+                    <div class="telemetry-label">Position X</div>
+                    <div class="telemetry-value" id="pos-x">0.00 m</div>
+                </div>
+                <div class="telemetry-item">
+                    <div class="telemetry-label">Position Y</div>
+                    <div class="telemetry-value" id="pos-y">0.00 m</div>
+                </div>
+                <div class="telemetry-item">
+                    <div class="telemetry-label">Heading</div>
+                    <div class="telemetry-value" id="heading">0°</div>
+                </div>
+                <div class="telemetry-item">
+                    <div class="telemetry-label">Confidence</div>
+                    <div class="telemetry-value" id="confidence">0%</div>
+                </div>
+            </div>
+            
+            <div id="button-row">
+                <button class="ar-button primary" id="btn-start" onclick="startAR()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5,3 19,12 5,21"/>
+                    </svg>
+                    Start AR
+                </button>
+                <button class="ar-button secondary" id="btn-place" onclick="placeObject()" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    </svg>
+                    Place Object
+                </button>
+                <button class="ar-button secondary" id="btn-reset" onclick="resetAnchor()" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6M1 20v-6h6"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    Reset
+                </button>
+            </div>
+        </div>
+        
+        <!-- Loading Overlay -->
+        <div id="loading-overlay">
+            <div class="loader"></div>
+            <div class="loading-text">Initializing AR System</div>
+            <div class="loading-status" id="loading-status">Loading OpenCV.js...</div>
+        </div>
+        
+        <!-- Permission Modal -->
+        <div id="permission-modal" class="hidden">
+            <div class="permission-card">
+                <div class="permission-icon">📱</div>
+                <h2 class="permission-title">Enable AR Features</h2>
+                <p class="permission-desc">
+                    This AR experience needs access to your device sensors to track your position and orientation in the real world.
+                </p>
+                <div class="permission-list">
+                    <div class="permission-item">
+                        <div class="permission-item-icon">📷</div>
+                        <span>Camera for visual tracking</span>
+                    </div>
+                    <div class="permission-item">
+                        <div class="permission-item-icon">📍</div>
+                        <span>Location for world positioning</span>
+                    </div>
+                    <div class="permission-item">
+                        <div class="permission-item-icon">🧭</div>
+                        <span>Motion sensors for smooth tracking</span>
+                    </div>
+                </div>
+                <button class="ar-button primary" style="width:100%;max-width:none;" onclick="requestPermissions()">
+                    Enable Permissions
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="slam-engine.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

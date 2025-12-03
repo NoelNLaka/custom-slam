@@ -1,0 +1,35 @@
+{
+  "name": "web-ar-slam-prototype",
+  "version": "1.0.0",
+  "description": "Web-based AR SLAM system with hybrid GPS + Visual tracking",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve . -l 3000",
+    "deploy:vercel": "vercel",
+    "deploy:netlify": "netlify deploy --prod"
+  },
+  "keywords": [
+    "ar",
+    "slam",
+    "webxr",
+    "gps",
+    "opencv",
+    "threejs",
+    "augmented-reality"
+  ],
+  "author": "Henry",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Safari versions",
+    "last 2 Firefox versions"
+  ]
+}

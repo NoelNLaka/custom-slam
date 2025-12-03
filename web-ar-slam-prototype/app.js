@@ -222,20 +222,22 @@ class ARScene {
      * Update camera pose from SLAM
      */
     updateCameraPose(position, orientation) {
-        // Update camera position (inverted - we move the scene, not the camera)
-        // This keeps objects stable while camera view changes
-        
+        // Update camera position based on tracked movement
+        // This makes objects stay fixed in world space while camera moves
+        this.camera.position.set(
+            position.x,
+            1.6,  // Maintain eye height
+            -position.y  // Invert Y for Three.js Z coordinate
+        );
+
         // Apply orientation (Euler angles to quaternion)
         const euler = new THREE.Euler(
-            orientation.x,
+            -0.3 + orientation.x,  // Keep downward tilt plus tracked rotation
             orientation.z,  // Yaw as Y rotation
             orientation.y,
             'YXZ'
         );
         this.camera.quaternion.setFromEuler(euler);
-        
-        // For position, we offset objects rather than moving camera
-        // This prevents floating point precision issues at large distances
     }
     
     /**
@@ -660,26 +662,15 @@ function placeObject() {
         return;
     }
     
-    // Get position from fusion state or use default
-    let posX = 0, posY = 0;
-    
-    if (slamEngine) {
-        const state = slamEngine.getState();
-        if (state && state.fusion) {
-            posX = state.fusion.position.x || 0;
-            posY = state.fusion.position.y || 0;
-        }
-    }
-    
-    // Place object in front of camera (2 meters away)
-    // Use a slight offset based on placed objects count to spread them out
+    // Place objects at fixed world positions
+    // First object at grid center, subsequent objects spread around it
     const offsetAngle = (placedObjects.length * 45) * Math.PI / 180;
-    const distance = 2 + (placedObjects.length * 0.5);
-    
+    const distance = placedObjects.length === 0 ? 0 : 2;  // First at center, others 2m away
+
     const pos = new THREE.Vector3(
-        posX + Math.sin(offsetAngle) * distance,
-        0.3,  // Height above ground
-        -(posY + Math.cos(offsetAngle) * distance)  // Invert for Three.js coordinate system
+        Math.sin(offsetAngle) * distance,  // X position
+        0.3,  // Height above ground (30cm)
+        Math.cos(offsetAngle) * distance   // Z position (forward)
     );
     
     // Cycle through object types
